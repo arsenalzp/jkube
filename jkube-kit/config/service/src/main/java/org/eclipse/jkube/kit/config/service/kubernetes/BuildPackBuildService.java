@@ -17,13 +17,15 @@ import java.io.File;
 import java.io.IOException;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Properties;
 
 import org.apache.commons.lang3.StringUtils;
 import org.eclipse.jkube.kit.build.service.docker.DockerServiceHub;
+import org.eclipse.jkube.kit.common.JKubeConfiguration;
 import org.eclipse.jkube.kit.common.KitLogger;
-import org.eclipse.jkube.kit.common.RegistryConfig;
 import org.eclipse.jkube.kit.config.image.ImageConfiguration;
+import org.eclipse.jkube.kit.config.image.build.BuildConfiguration;
 import org.eclipse.jkube.kit.config.image.build.JKubeBuildStrategy;
 import org.eclipse.jkube.kit.config.service.AbstractImageBuildService;
 import org.eclipse.jkube.kit.config.service.BuildServiceConfig;
@@ -42,9 +44,10 @@ public class BuildPackBuildService extends AbstractImageBuildService {
   private static final String PACK_CONFIG_DIR = ".pack";
   private static final String PACK_CONFIG_FILE = "config.toml";
 
-  private final BuildServiceConfig buildServiceConfig;
   private final KitLogger kitLogger;
+  private final BuildServiceConfig buildServiceConfig;
   private final BuildPackCliDownloader buildPackCliDownloader;
+  private final JKubeConfiguration jKubeConfiguration;
   private final DockerServiceHub dockerServiceHub;
 
   public BuildPackBuildService(JKubeServiceHub jKubeServiceHub) {
@@ -53,15 +56,18 @@ public class BuildPackBuildService extends AbstractImageBuildService {
 
   BuildPackBuildService(JKubeServiceHub jKubeServiceHub, Properties packProperties) {
     super(jKubeServiceHub);
+    this.kitLogger = Objects.requireNonNull(jKubeServiceHub.getLog());
     this.buildServiceConfig = Objects.requireNonNull(jKubeServiceHub.getBuildServiceConfig(),
         "BuildServiceConfig is required");
-    this.kitLogger = Objects.requireNonNull(jKubeServiceHub.getLog());
+    this.jKubeConfiguration = Objects.requireNonNull(jKubeServiceHub.getConfiguration(),
+      "JKubeConfiguration is required");
+    this.dockerServiceHub = Objects.requireNonNull(jKubeServiceHub.getDockerServiceHub(),
+      "Docker Service Hub is required");
     if (packProperties == null) {
       this.buildPackCliDownloader = new BuildPackCliDownloader(kitLogger);
     } else {
       this.buildPackCliDownloader = new BuildPackCliDownloader(kitLogger, packProperties);
     }
-    this.dockerServiceHub = jKubeServiceHub.getDockerServiceHub();
   }
 
   @Override
@@ -69,17 +75,12 @@ public class BuildPackBuildService extends AbstractImageBuildService {
     kitLogger.info("Delegating container image building process to BuildPacks");
     final File packCli = buildPackCliDownloader.getPackCLIIfPresentOrDownload();
     kitLogger.info("Using pack %s", packCli.getAbsolutePath());
-    final String builderImage;
-    final Properties localPackConfig =
-      readProperties(getUserHome().toPath().resolve(PACK_CONFIG_DIR).resolve(PACK_CONFIG_FILE));
-    if (localPackConfig.get("default-builder-image") != null) {
-      builderImage = strip(localPackConfig.getProperty("default-builder-image"), "\"");
-    } else {
-      builderImage = DEFAULT_BUILDER_IMAGE;
-    }
+    final String builderImage = getApplicableBuildPackBuilderImage(imageConfiguration.getBuild());
+
     BuildPackBuildOptions.BuildPackBuildOptionsBuilder buildPackBuildOptionsBuilder = BuildPackBuildOptions.builder()
         .imageName(imageConfiguration.getName())
         .builderImage(builderImage)
+        .path(jKubeConfiguration.getBasedir().getAbsolutePath())
         .creationTime("now");
     if (imageConfiguration.getBuild() != null) {
       if (StringUtils.isNotBlank(imageConfiguration.getBuild().getImagePullPolicy())) {
@@ -90,15 +91,17 @@ public class BuildPackBuildService extends AbstractImageBuildService {
       }
       buildPackBuildOptionsBuilder.env(imageConfiguration.getBuild().getEnv())
           .tags(imageConfiguration.getBuild().getTags())
+          .clearCache(Optional.ofNullable(imageConfiguration.getBuild().getNocache()).orElse(false))
           .volumes(imageConfiguration.getBuild().getVolumes());
     }
     new BuildPackCliController(packCli, kitLogger).build(buildPackBuildOptionsBuilder.build());
   }
 
   @Override
-  protected void pushSingleImage(ImageConfiguration imageConfiguration, int retries, RegistryConfig registryConfig, boolean skipTag) throws JKubeServiceException {
+  protected void pushSingleImage(ImageConfiguration imageConfiguration, int retries, boolean skipTag) throws JKubeServiceException {
     try {
-      dockerServiceHub.getRegistryService().pushImage(imageConfiguration, retries, registryConfig, skipTag);
+      dockerServiceHub.getRegistryService()
+        .pushImage(imageConfiguration, retries, jKubeConfiguration.getPushRegistryConfig(), skipTag);
     } catch (IOException ex) {
       throw new JKubeServiceException("Error while trying to push the image: " + ex.getMessage(), ex);
     }
@@ -113,5 +116,17 @@ public class BuildPackBuildService extends AbstractImageBuildService {
   @Override
   public void postProcess() {
     // NOOP
+  }
+
+  private String getApplicableBuildPackBuilderImage(BuildConfiguration buildConfiguration) {
+    final Properties localPackConfig =
+        readProperties(getUserHome().toPath().resolve(PACK_CONFIG_DIR).resolve(PACK_CONFIG_FILE));
+    if (buildConfiguration != null && StringUtils.isNotBlank(buildConfiguration.getBuildpacksBuilderImage())) {
+      return buildConfiguration.getBuildpacksBuilderImage();
+    } else if (localPackConfig.get("default-builder-image") != null) {
+      return strip(localPackConfig.getProperty("default-builder-image"), "\"");
+    } else {
+      return DEFAULT_BUILDER_IMAGE;
+    }
   }
 }

@@ -16,10 +16,11 @@ package org.eclipse.jkube.kit.resource.helm;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.Charset;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -33,9 +34,13 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import com.marcnuri.helm.DependencyCommand;
 import com.marcnuri.helm.Helm;
+import com.marcnuri.helm.InstallCommand;
 import com.marcnuri.helm.LintCommand;
 import com.marcnuri.helm.LintResult;
+import com.marcnuri.helm.Release;
+import com.marcnuri.helm.UninstallCommand;
 import org.eclipse.jkube.kit.common.JKubeConfiguration;
 import org.eclipse.jkube.kit.common.JKubeException;
 import org.eclipse.jkube.kit.common.KitLogger;
@@ -62,6 +67,7 @@ import org.apache.commons.lang3.StringUtils;
 import static org.apache.commons.lang3.StringUtils.EMPTY;
 import static org.eclipse.jkube.kit.common.JKubeFileInterpolator.DEFAULT_FILTER;
 import static org.eclipse.jkube.kit.common.JKubeFileInterpolator.interpolate;
+import static org.eclipse.jkube.kit.common.util.KubernetesHelper.exportKubernetesClientConfigToFile;
 import static org.eclipse.jkube.kit.common.util.MapUtil.getNestedMap;
 import static org.eclipse.jkube.kit.common.util.TemplateUtil.escapeYamlTemplate;
 import static org.eclipse.jkube.kit.common.util.YamlUtil.listYamls;
@@ -80,6 +86,7 @@ public class HelmService {
 
   private static final String VALUES_FRAGMENT_REGEX = "^values\\.helm\\.(?<ext>yaml|yml|json)$";
   public static final Pattern VALUES_FRAGMENT_PATTERN = Pattern.compile(VALUES_FRAGMENT_REGEX, Pattern.CASE_INSENSITIVE);
+  private static final String SYSTEM_LINE_SEPARATOR_REGEX = "\r?\n";
 
   private final JKubeConfiguration jKubeConfiguration;
   private final ResourceServiceConfig resourceServiceConfig;
@@ -154,10 +161,10 @@ public class HelmService {
     final HelmRepository helmRepository = selectHelmRepository(helm);
     if (isRepositoryValid(helmRepository)) {
       final List<RegistryServerConfiguration> registryServerConfigurations = Optional
-          .ofNullable(jKubeConfiguration).map(JKubeConfiguration::getRegistryConfig).map(RegistryConfig::getSettings)
+          .ofNullable(jKubeConfiguration).map(JKubeConfiguration::getPushRegistryConfig).map(RegistryConfig::getSettings)
           .orElse(Collections.emptyList());
       final UnaryOperator<String> passwordDecryptor = Optional.ofNullable(jKubeConfiguration)
-          .map(JKubeConfiguration::getRegistryConfig).map(RegistryConfig::getPasswordDecryptionMethod)
+          .map(JKubeConfiguration::getPushRegistryConfig).map(RegistryConfig::getPasswordDecryptionMethod)
           .orElse(s -> s);
       setAuthentication(helmRepository, logger, registryServerConfigurations, passwordDecryptor);
       uploadHelmChart(helm, helmRepository);
@@ -165,6 +172,82 @@ public class HelmService {
       String error = "No repository or invalid repository configured for upload";
       logger.error(error);
       throw new IllegalStateException(error);
+    }
+  }
+
+  public void dependencyUpdate(HelmConfig helmConfig) {
+    for (HelmConfig.HelmType helmType : helmConfig.getTypes()) {
+      logger.info("Running Helm Dependency Upgrade %s %s", helmConfig.getChart(), helmConfig.getVersion());
+      DependencyCommand.DependencySubcommand<String> dependencyUpdateCommand = new Helm(Paths.get(helmConfig.getOutputDir(), helmType.getOutputDir()))
+          .dependency().update();
+      if (helmConfig.isDebug()) {
+        dependencyUpdateCommand.debug();
+      }
+      if (helmConfig.isDependencyVerify()) {
+        dependencyUpdateCommand.verify();
+      }
+      if (helmConfig.isDependencySkipRefresh()) {
+        dependencyUpdateCommand.skipRefresh();
+      }
+      Arrays.stream(dependencyUpdateCommand.call() 
+       .split(SYSTEM_LINE_SEPARATOR_REGEX))
+       .forEach(l -> logger.info("[[W]]%s", l)); 
+    }
+  }
+
+  public void install(HelmConfig helmConfig) {
+    for (HelmConfig.HelmType helmType : helmConfig.getTypes()) {
+      logger.info("Installing Helm Chart %s %s", helmConfig.getChart(), helmConfig.getVersion());
+      InstallCommand installCommand = new Helm(Paths.get(helmConfig.getOutputDir(), helmType.getOutputDir()))
+        .install();
+      if (helmConfig.isInstallDependencyUpdate()) {
+        installCommand.dependencyUpdate();
+      }
+      if (StringUtils.isNotBlank(helmConfig.getReleaseName())) {
+        installCommand.withName(helmConfig.getReleaseName());
+      }
+      if (helmConfig.isInstallWaitReady()) {
+        installCommand.waitReady();
+      }
+      if (helmConfig.isDisableOpenAPIValidation()) {
+        installCommand.disableOpenApiValidation();
+      }
+      installCommand.withKubeConfig(createTemporaryKubeConfigForInstall());
+      Release release = installCommand.call();
+      logger.info("[[W]]NAME : %s", release.getName());
+      logger.info("[[W]]NAMESPACE : %s", release.getNamespace());
+      logger.info("[[W]]STATUS : %s", release.getStatus());
+      logger.info("[[W]]REVISION : %s", release.getRevision());
+      logger.info("[[W]]LAST DEPLOYED : %s", release.getLastDeployed().format(DateTimeFormatter.ofPattern("E MMM dd HH:mm:ss yyyy")));
+      Arrays.stream(release.getOutput().split("---"))
+        .filter(o -> o.contains("Deleting outdated charts"))
+        .findFirst()
+        .ifPresent(s -> Arrays.stream(s.split(SYSTEM_LINE_SEPARATOR_REGEX))
+          .filter(StringUtils::isNotBlank)
+          .forEach(l -> logger.info("[[W]]%s", l)));
+    }
+  }
+
+  public void uninstall(HelmConfig helmConfig) {
+    logger.info("Uninstalling Helm Chart %s %s", helmConfig.getChart(), helmConfig.getVersion());
+    UninstallCommand uninstallCommand = Helm.uninstall(helmConfig.getReleaseName())
+      .withKubeConfig(createTemporaryKubeConfigForInstall());
+
+    Arrays.stream(uninstallCommand.call().split(SYSTEM_LINE_SEPARATOR_REGEX))
+      .filter(StringUtils::isNotBlank)
+      .forEach(l -> logger.info("[[W]]%s", l));
+  }
+
+  private Path createTemporaryKubeConfigForInstall() {
+    try {
+      File kubeConfigParentDir = new File(jKubeConfiguration.getProject().getBuildDirectory(), "jkube-temp");
+      FileUtil.createDirectory(kubeConfigParentDir);
+      File helmInstallKubeConfig = new File(kubeConfigParentDir, "config");
+      helmInstallKubeConfig.deleteOnExit();
+      exportKubernetesClientConfigToFile(jKubeConfiguration.getClusterConfiguration().getConfig(), helmInstallKubeConfig.toPath());
+      return helmInstallKubeConfig.toPath();
+    } catch (IOException ioException) {
+      throw new JKubeException("Failure in creating temporary kubeconfig file", ioException);
     }
   }
 

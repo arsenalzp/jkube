@@ -61,6 +61,12 @@ Defaults to `${project.version}`.
 endif::[]
 | `jkube.helm.version`
 
+| *debug*
+| enable verbose output for helm operations
+
+Defaults to `false`
+| `jkube.helm.debug`
+
 | *description*
 | The Chart single-sentence description.
 ifeval::["{plugin-type}" == "maven"]
@@ -273,14 +279,15 @@ ifeval::["{plugin-type}" == "gradle"]
 ==== Installing the generated Helm chart
 endif::[]
 
-In a next step you can install this via the https://github.com/helm/helm/releases[helm command line tool] as follows:
 
 ifeval::["{plugin-type}" == "maven"]
+In a next step you can install this via <<jkube:helm-install, {goal-prefix}:helm-install>> goal as follows:
 include::maven/_helm_install.adoc[]
 
 In addition, this goal will also create a tar-archive below `${basedir}/target` which contains the chart with its template.
 endif::[]
 ifeval::["{plugin-type}" == "gradle"]
+In a next step you can install this via <<jkubeHelmInstall, {task-prefix}HelmInstall>> task as follows:
 include::gradle/_helm_install.adoc[]
 
 In addition, this task will also create a tar-archive below `outputDir` which contains the chart with its template.
@@ -292,3 +299,20 @@ include::maven/_jkube_helm_maven_execution.adoc[]
 include::_jkube_helm_multimodule.adoc[]
 endif::[]
 
+ifeval::["{plugin-type}" == "maven"]
+=== Uninstalling the installed Helm release
+endif::[]
+ifeval::["{plugin-type}" == "gradle"]
+==== Uninstalling the installed Helm release
+endif::[]
+
+
+ifeval::["{plugin-type}" == "maven"]
+You can uninstall installed Helm release from {cluster} via <<jkube:helm-uninstall, {goal-prefix}:helm-uninstall>> goal as follows:
+include::maven/_helm_uninstall.adoc[]
+endif::[]
+ifeval::["{plugin-type}" == "gradle"]
+You can uninstall installed Helm release from {cluster}  via <<jkubeHelmUninstall, {task-prefix}HelmUninstall>> task as follows:
+include::gradle/_helm_uninstall.adoc[]
+
+endif::[]

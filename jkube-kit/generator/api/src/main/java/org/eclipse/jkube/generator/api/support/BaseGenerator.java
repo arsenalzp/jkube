@@ -26,7 +26,6 @@ import org.eclipse.jkube.generator.api.FromSelector;
 import org.eclipse.jkube.generator.api.Generator;
 import org.eclipse.jkube.generator.api.GeneratorConfig;
 import org.eclipse.jkube.generator.api.GeneratorContext;
-import org.eclipse.jkube.kit.build.api.helper.DockerFileUtil;
 import org.eclipse.jkube.kit.common.Configs;
 import org.eclipse.jkube.kit.common.JavaProject;
 import org.eclipse.jkube.kit.common.PrefixedLogger;
@@ -48,6 +47,11 @@ import org.eclipse.jgit.lib.Repository;
  * @author roland
  */
 public abstract class BaseGenerator implements Generator {
+
+    public static final String PROPERTY_JKUBE_IMAGE_NAME = "jkube.image.name";
+    public static final String PROPERTY_JKUBE_GENERATOR_NAME = "jkube.generator.name";
+    private static final String PROPERTY_JKUBE_GENERATOR_LABELS = "jkube.generator.labels";
+
 
     private static final String LABEL_SCHEMA_VERSION = "1.0";
     private static final String GIT_REMOTE = "origin";
@@ -76,6 +80,10 @@ public abstract class BaseGenerator implements Generator {
 
         // Base image mode (only relevant for OpenShift)
         FROM_MODE("fromMode", null),
+        BUILDPACKS_BUILDER_IMAGE("buildpacksBuilderImage", null),
+
+        // Labels
+        LABELS("labels", null),
 
         // Optional registry
         REGISTRY("registry", null),
@@ -131,6 +139,10 @@ public abstract class BaseGenerator implements Generator {
         return getConfigWithFallback(Config.FROM, "jkube.generator.from", null);
     }
 
+    protected String getBuildpacksBuilderImageAsConfigured() {
+        return getConfigWithFallback(Config.BUILDPACKS_BUILDER_IMAGE, "jkube.generator.buildpacksBuilderImage", null);
+    }
+
     /**
      * Add the base image either from configuration or from a given selector
      *
@@ -139,6 +151,7 @@ public abstract class BaseGenerator implements Generator {
     protected void addFrom(BuildConfiguration.BuildConfigurationBuilder builder) {
         String fromMode = getConfigWithFallback(Config.FROM_MODE, "jkube.generator.fromMode", "docker");
         String from = getFromAsConfigured();
+        builder.buildpacksBuilderImage(getBuildpacksBuilderImageAsConfigured());
         if ("docker".equalsIgnoreCase(fromMode)) {
             String fromImage = from;
             if (fromImage == null) {
@@ -186,9 +199,9 @@ public abstract class BaseGenerator implements Generator {
      */
     protected String getImageName() {
         if (getContext().getRuntimeMode() == RuntimeMode.OPENSHIFT) {
-            return getConfigWithFallback(Config.NAME, "jkube.generator.name", "%a:%l");
+            return getConfigWithFallback(Config.NAME, PROPERTY_JKUBE_GENERATOR_NAME, "%a:%l");
         } else {
-            return getConfigWithFallback(Config.NAME, "jkube.generator.name", "%g/%a:%l");
+            return getConfigWithFallback(Config.NAME, PROPERTY_JKUBE_GENERATOR_NAME, "%g/%a:%l");
         }
     }
 
@@ -215,20 +228,10 @@ public abstract class BaseGenerator implements Generator {
     }
 
     protected boolean shouldAddGeneratedImageConfiguration(List<ImageConfiguration> configs) {
-        if (getProject() != null && getProject().getBaseDirectory() != null && getProject().getBaseDirectory().exists()
-              && DockerFileUtil.isSimpleDockerFileMode(getContext().getProject().getBaseDirectory())) {
-            return false;
-        }
         if (containsBuildConfiguration(configs)) {
             return Boolean.parseBoolean(getConfigWithFallback(Config.ADD, "jkube.generator.add", "false"));
         }
         return true;
-    }
-
-    protected void addLatestTagIfSnapshot(BuildConfiguration.BuildConfigurationBuilder buildBuilder) {
-        if (getProject().getVersion().endsWith("-SNAPSHOT")) {
-            buildBuilder.tags(Collections.singletonList("latest"));
-        }
     }
 
     protected void addTagsFromConfig(BuildConfiguration.BuildConfigurationBuilder buildConfigurationBuilder) {
@@ -253,7 +256,7 @@ public abstract class BaseGenerator implements Generator {
     protected void addSchemaLabels(BuildConfiguration.BuildConfigurationBuilder buildBuilder, PrefixedLogger log) {
         final JavaProject project = getProject();
         String docURL = project.getDocumentationUrl();
-        Map<String, String> labels = new HashMap<>();
+        final Map<String, String> labels = new HashMap<>(buildBuilder.build().getLabels());
 
         labels.put(BuildLabelAnnotations.BUILD_DATE.value(), getProject().getBuildDate().format(DateTimeFormatter.ISO_DATE));
         labels.put(BuildLabelAnnotations.NAME.value(), project.getName());
@@ -285,6 +288,18 @@ public abstract class BaseGenerator implements Generator {
         } catch (IOException | GitAPIException | NullPointerException e) {
             log.error("Cannot extract Git information: " + e, e);
         } finally {
+            buildBuilder.labels(labels);
+        }
+    }
+
+    protected void addLabelsFromConfig(BuildConfiguration.BuildConfigurationBuilder buildBuilder) {
+        final String commaSeparatedLabels = getConfigWithFallback(Config.LABELS, PROPERTY_JKUBE_GENERATOR_LABELS, null);
+        if (StringUtils.isNotBlank(commaSeparatedLabels)) {
+            final Map<String, String> labels = new HashMap<>(buildBuilder.build().getLabels());
+            Arrays.stream(commaSeparatedLabels.split(","))
+              .map(envNameValue -> envNameValue.split("="))
+              .filter(e -> e.length == 2)
+              .forEach(e -> labels.put(e[0].trim(), e[1].trim()));
             buildBuilder.labels(labels);
         }
     }

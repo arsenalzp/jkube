@@ -20,7 +20,7 @@
 
   <groupId>org.eclipse.jkube.quickstarts.maven</groupId>
   <artifactId>quarkus</artifactId>
-  <version>1.16.2</version>
+  <version>1.17.0</version>
   <name>Eclipse JKube :: Quickstarts :: Maven :: Quarkus</name>
   <description>
     Quarkus application with a single JAX-RS endpoint.
@@ -32,7 +32,7 @@
     <maven.compiler.source>11</maven.compiler.source>
     <maven.compiler.target>11</maven.compiler.target>
     <jkube.version>${project.version}</jkube.version>
-    <version.quarkus>2.8.1.Final</version.quarkus>
+    <version.quarkus>3.9.1</version.quarkus>
     <jkube.enricher.jkube-service.type>NodePort</jkube.enricher.jkube-service.type>
   </properties>
 

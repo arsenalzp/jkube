@@ -14,6 +14,7 @@
 package org.eclipse.jkube.kit.common.util;
 
 import org.apache.commons.lang3.StringUtils;
+import org.eclipse.jkube.kit.common.JKubeException;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -214,27 +215,6 @@ public class EnvUtil {
             res[i] = split[i].replaceAll("\\\\ ", " ");
         }
         return res;
-    }
-
-
-    /**
-     * Join a list of objects to a string with a given separator by calling Object.toString() on the elements.
-     *
-     * @param list      to join
-     * @param separator separator to use
-     * @return the joined string.
-     */
-    public static String stringJoin(List list, String separator) {
-        StringBuilder ret = new StringBuilder();
-        boolean first = true;
-        for (Object o : list) {
-            if (!first) {
-                ret.append(separator);
-            }
-            ret.append(o);
-            first = false;
-        }
-        return ret.toString();
     }
 
     /**
@@ -446,7 +426,7 @@ public class EnvUtil {
       }
     }
 
-    public static Date loadTimestamp(File tsFile) throws IOException {
+    public static Date loadTimestamp(File tsFile) {
         try {
             if (tsFile.exists()) {
                 final String ts = new String(Files.readAllBytes(tsFile.toPath()), StandardCharsets.US_ASCII);
@@ -455,7 +435,7 @@ public class EnvUtil {
                 return null;
             }
         } catch (IOException e) {
-            throw new IOException("Cannot read timestamp " + tsFile, e);
+            throw JKubeException.launderThrowable("Cannot read timestamp " + tsFile, e);
         }
     }
 
@@ -533,5 +513,14 @@ public class EnvUtil {
                 .orElse(null);
         }
         return null;
+    }
+
+    public static String javaBinary() {
+        String path = new File(EnvUtil.getProperty("java.home")).toPath().resolve("bin").resolve("java").toFile()
+          .getAbsolutePath();
+        if (isWindows()) {
+            path = path.concat(".exe");
+        }
+        return path;
     }
 }

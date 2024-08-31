@@ -32,21 +32,17 @@ import org.eclipse.jkube.kit.build.service.docker.ImagePullManager;
 import org.eclipse.jkube.kit.common.RegistryConfig;
 import org.eclipse.jkube.kit.build.service.docker.DockerServiceHub;
 import org.eclipse.jkube.kit.build.service.docker.access.DockerAccess;
-import org.eclipse.jkube.kit.build.service.docker.auth.AuthConfigFactory;
-import org.eclipse.jkube.kit.build.api.helper.ConfigHelper;
+import org.eclipse.jkube.kit.build.service.docker.auth.DockerAuthConfigFactory;
 import org.eclipse.jkube.kit.build.service.docker.config.DockerMachineConfiguration;
 import org.eclipse.jkube.kit.config.image.WatchMode;
-import org.eclipse.jkube.kit.build.api.helper.ImageConfigResolver;
 import org.eclipse.jkube.kit.common.JavaProject;
 import org.eclipse.jkube.kit.common.KitLogger;
 import org.eclipse.jkube.kit.common.util.AnsiLogger;
 import org.eclipse.jkube.kit.common.util.EnvUtil;
 import org.eclipse.jkube.kit.common.util.MavenUtil;
 import org.eclipse.jkube.kit.common.util.ResourceUtil;
-import org.eclipse.jkube.kit.config.access.ClusterAccess;
-import org.eclipse.jkube.kit.config.access.ClusterConfiguration;
+import org.eclipse.jkube.kit.common.access.ClusterConfiguration;
 import org.eclipse.jkube.kit.config.image.build.RegistryAuthConfiguration;
-import org.eclipse.jkube.kit.config.resource.BuildRecreateMode;
 import org.eclipse.jkube.kit.config.resource.PlatformMode;
 import org.eclipse.jkube.kit.config.resource.ProcessorConfig;
 import org.eclipse.jkube.kit.config.resource.ResourceConfig;
@@ -180,6 +176,10 @@ public abstract class AbstractDockerMojo extends AbstractMojo
     @Parameter(property = "jkube.docker.pull.registry")
     protected String pullRegistry;
 
+    // Registry to use for push operations if no registry is specified
+    @Parameter(property = "jkube.docker.push.registry")
+    protected String pushRegistry;
+
     /**
      * Build mode when build is performed.
      * Can be either "s2i" for an s2i binary build mode (in case of OpenShift) or
@@ -199,10 +199,6 @@ public abstract class AbstractDockerMojo extends AbstractMojo
      */
     @Parameter(property = "jkube.profile")
     protected String profile;
-
-    // Handler for external configurations
-    @Component
-    protected ImageConfigResolver imageConfigResolver;
 
     /**
      * Skip extended authentication
@@ -310,12 +306,12 @@ public abstract class AbstractDockerMojo extends AbstractMojo
     protected String environment;
 
     // Handler dealing with authentication credentials
-    protected AuthConfigFactory authConfigFactory;
+    protected DockerAuthConfigFactory authConfigFactory;
 
     protected KitLogger log;
 
-    // Access for creating OpenShift binary builds
-    protected ClusterAccess clusterAccess;
+    // Resolved Cluster Configuration
+    protected ClusterConfiguration clusterConfiguration;
 
     // The JKube service hub
     protected JKubeServiceHub jkubeServiceHub;
@@ -377,9 +373,8 @@ public abstract class AbstractDockerMojo extends AbstractMojo
 
     protected void init() {
         log = new AnsiLogger(getLog(), useColorForLogging(), verbose, !settings.getInteractiveMode(), getLogPrefix());
-        authConfigFactory = new AuthConfigFactory(log);
-        imageConfigResolver.setLog(log);
-        clusterAccess = new ClusterAccess(initClusterConfiguration());
+        authConfigFactory = new DockerAuthConfigFactory(log);
+        clusterConfiguration = initClusterConfiguration();
         runtimeMode = getConfiguredRuntimeMode();
     }
 
@@ -402,13 +397,12 @@ public abstract class AbstractDockerMojo extends AbstractMojo
                 jkubeServiceHub = JKubeServiceHub.builder()
                     .log(log)
                     .configuration(initJKubeConfiguration())
-                    .clusterAccess(clusterAccess)
                     .platformMode(getConfiguredRuntimeMode())
                     .dockerServiceHub(DockerServiceHub.newInstance(log, dockerAccess))
                     .buildServiceConfig(buildServiceConfigBuilder().build())
                     .offline(offline)
                     .build();
-                resolvedImages = ConfigHelper.initImageConfiguration(getBuildTimestamp(getPluginContext(), CONTEXT_KEY_BUILD_TIMESTAMP, project.getBuild().getDirectory(), DOCKER_BUILD_TIMESTAMP), images, imageConfigResolver, log, filter, new DefaultGeneratorManager(generatorContextBuilder().build()), jkubeServiceHub.getConfiguration());
+                resolvedImages = new DefaultGeneratorManager(generatorContextBuilder().build()).generateAndMerge(images);
                 executeInternal();
             } catch (IOException | DependencyResolutionRequiredException exp) {
                 logException(exp);
@@ -430,14 +424,15 @@ public abstract class AbstractDockerMojo extends AbstractMojo
     protected abstract void executeInternal() throws IOException, MojoExecutionException;
 
     protected JKubeConfiguration initJKubeConfiguration() throws DependencyResolutionRequiredException {
-        ConfigHelper.validateExternalPropertyActivation(javaProject, images);
         return JKubeConfiguration.builder()
             .project(MavenUtil.convertMavenProjectToJKubeProject(project, session))
             .sourceDirectory(sourceDirectory)
             .outputDirectory(outputDirectory)
             .reactorProjects(Collections.singletonList(javaProject))
             .buildArgs(buildArgs)
-            .registryConfig(getRegistryConfig(pullRegistry))
+            .pullRegistryConfig(getRegistryConfig(pullRegistry))
+            .pushRegistryConfig(getRegistryConfig(pushRegistry))
+            .clusterConfiguration(clusterConfiguration)
             .build();
     }
 
@@ -544,9 +539,7 @@ public abstract class AbstractDockerMojo extends AbstractMojo
 
     protected BuildServiceConfig.BuildServiceConfigBuilder buildServiceConfigBuilder() {
         return BuildServiceConfig.builder()
-                .buildRecreateMode(BuildRecreateMode.fromParameter(buildRecreate))
                 .jKubeBuildStrategy(getJKubeBuildStrategy())
-                .forcePull(forcePull)
                 .imagePullManager(ImagePullManager.createImagePullManager(imagePullPolicy, autoPull, project.getProperties()))
                 .buildDirectory(project.getBuild().getDirectory())
                 .resourceConfig(resources)
@@ -595,7 +588,12 @@ public abstract class AbstractDockerMojo extends AbstractMojo
                 .project(javaProject)
                 .logger(log)
                 .runtimeMode(runtimeMode)
-                .useProjectClasspath(useProjectClasspath);
+                .prePackagePhase(false)
+                .sourceDirectory(sourceDirectory)
+                .useProjectClasspath(useProjectClasspath)
+                .buildTimestamp(getBuildTimestamp(getPluginContext(), CONTEXT_KEY_BUILD_TIMESTAMP, project.getBuild().getDirectory(),
+                   DOCKER_BUILD_TIMESTAMP))
+                .filter(filter);
     }
 
     /**

@@ -60,7 +60,6 @@ class OpenShiftBuildServiceTest {
     jKubeServiceHub = mock(JKubeServiceHub.class, RETURNS_DEEP_STUBS);
     final OpenShiftClient oc = mock(OpenShiftClient.class);
     when(jKubeServiceHub.getClient()).thenReturn(oc);
-    when(jKubeServiceHub.getClusterAccess().createDefaultClient()).thenReturn(oc);
     when(jKubeServiceHub.getConfiguration()).thenReturn(JKubeConfiguration.builder()
         .project(JavaProject.builder()
             .buildFinalName("test-project")
@@ -91,7 +90,7 @@ class OpenShiftBuildServiceTest {
     when(jKubeServiceHub.getLog()).thenReturn(kitLogger);
 
     // When
-    new OpenshiftBuildService(jKubeServiceHub).push(Collections.emptyList(), 0, new RegistryConfig(), false);
+    new OpenshiftBuildService(jKubeServiceHub).push(Collections.emptyList(), 0, false);
     // Then
     verify(kitLogger, times(0)).warn("Image is pushed to OpenShift's internal registry during oc:build goal. Skipping...");
   }
@@ -102,7 +101,7 @@ class OpenShiftBuildServiceTest {
     when(jKubeServiceHub.getLog()).thenReturn(kitLogger);
 
     // When
-    new OpenshiftBuildService(jKubeServiceHub).push(Collections.singletonList(imageConfiguration), 0, new RegistryConfig(), false);
+    new OpenshiftBuildService(jKubeServiceHub).push(Collections.singletonList(imageConfiguration), 0, false);
     // Then
     verify(kitLogger, times(1)).warn("Image is pushed to OpenShift's internal registry during oc:build goal. Skipping...");
   }
@@ -136,9 +135,9 @@ class OpenShiftBuildServiceTest {
   @Test
   void getApplicableImageConfiguration_withRegistryInImageConfigurationAndDockerImageBuildOutput_shouldAppendRegistryToImageName() {
     // Given
-    when(jKubeServiceHub.getBuildServiceConfig()).thenReturn(BuildServiceConfig.builder()
-            .buildOutputKind("DockerImage")
-        .build());
+    imageConfiguration = imageConfiguration.toBuilder()
+        .build(imageConfiguration.getBuild().toBuilder().openshiftBuildOutputKind("DockerImage").build())
+        .build();
     OpenshiftBuildService openshiftBuildService = new OpenshiftBuildService(jKubeServiceHub);
 
     // When
@@ -152,9 +151,9 @@ class OpenShiftBuildServiceTest {
   @Test
   void getApplicableImageConfiguration_withRegistryInImageConfiguration_shouldNotAppendRegistryToImageName() {
     // Given
-    when(jKubeServiceHub.getBuildServiceConfig()).thenReturn(BuildServiceConfig.builder()
-        .buildOutputKind("ImageStreamTag")
-        .build());
+    imageConfiguration = imageConfiguration.toBuilder()
+        .build(imageConfiguration.getBuild().toBuilder().openshiftBuildOutputKind("ImageStreamTag").build())
+        .build();
     OpenshiftBuildService openshiftBuildService = new OpenshiftBuildService(jKubeServiceHub);
 
     // When

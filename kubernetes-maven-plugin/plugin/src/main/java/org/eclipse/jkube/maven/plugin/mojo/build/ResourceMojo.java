@@ -17,13 +17,11 @@ import java.io.File;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
-import java.util.Properties;
 
 import javax.validation.ConstraintViolationException;
 
+import org.apache.commons.lang3.StringUtils;
 import org.eclipse.jkube.generator.api.GeneratorContext;
-import org.eclipse.jkube.kit.build.api.helper.ImageConfigResolver;
-import org.eclipse.jkube.kit.build.api.helper.ConfigHelper;
 
 import org.eclipse.jkube.generator.api.DefaultGeneratorManager;
 import org.eclipse.jkube.kit.common.KitLogger;
@@ -37,7 +35,6 @@ import org.eclipse.jkube.kit.config.image.build.JKubeBuildStrategy;
 import org.eclipse.jkube.kit.config.resource.MappingConfig;
 import org.eclipse.jkube.kit.config.resource.PlatformMode;
 import org.eclipse.jkube.kit.config.resource.ProcessorConfig;
-import org.eclipse.jkube.kit.config.resource.RuntimeMode;
 import org.eclipse.jkube.kit.enricher.api.DefaultEnricherManager;
 import org.eclipse.jkube.kit.enricher.api.JKubeEnricherContext;
 import org.eclipse.jkube.kit.profile.ProfileUtil;
@@ -52,7 +49,6 @@ import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.plugins.annotations.ResolutionScope;
 import org.apache.maven.project.MavenProjectHelper;
 
-import static org.eclipse.jkube.kit.build.api.helper.ImageNameFormatter.DOCKER_IMAGE_USER;
 import static org.eclipse.jkube.kit.common.util.BuildReferenceDateUtil.getBuildTimestamp;
 import static org.eclipse.jkube.kit.common.util.DekorateUtil.DEFAULT_RESOURCE_LOCATION;
 import static org.eclipse.jkube.kit.common.util.DekorateUtil.useDekorate;
@@ -69,9 +65,6 @@ public class ResourceMojo extends AbstractJKubeMojo {
 
     // Filename for holding the build timestamp
     public static final String DOCKER_BUILD_TIMESTAMP = "docker/build.timestamp";
-
-    @Component
-    protected ImageConfigResolver imageConfigResolver;
 
     /**
      * Should we use the project's compile-time classpath to scan for additional enrichers/generators?
@@ -116,10 +109,6 @@ public class ResourceMojo extends AbstractJKubeMojo {
     @Parameter
     private ProcessorConfig generator;
 
-    // Whether to use replica sets or replication controller. Could be configurable
-    // but for now leave it hidden.
-    private boolean useReplicaSet = true;
-
     // The image configuration after resolving and customization
     protected List<ImageConfiguration> resolvedImages;
 
@@ -159,7 +148,6 @@ public class ResourceMojo extends AbstractJKubeMojo {
 
         updateKindFilenameMappings(mappings);
         try {
-            lateInit();
             // Resolve the Docker image build configuration
             resolvedImages = getResolvedImages(images, log);
             if (!skip && (!isPomProject() || hasJKubeDir())) {
@@ -177,11 +165,6 @@ public class ResourceMojo extends AbstractJKubeMojo {
         } catch (IOException e) {
             throw new MojoExecutionException("Failed to generate kubernetes descriptor", e);
         }
-    }
-
-    @Override
-    protected RuntimeMode getRuntimeMode() {
-        return RuntimeMode.KUBERNETES;
     }
 
     protected PlatformMode getPlatformMode() {
@@ -216,23 +199,6 @@ public class ResourceMojo extends AbstractJKubeMojo {
         }
     }
 
-    private void lateInit() {
-        RuntimeMode runtimeMode = getRuntimeMode();
-        jkubeServiceHub.setPlatformMode(runtimeMode);
-        if (runtimeMode.equals(RuntimeMode.OPENSHIFT)) {
-            Properties properties = javaProject.getProperties();
-            if (!properties.contains(DOCKER_IMAGE_USER)) {
-                String namespaceToBeUsed = this.namespace != null && !this.namespace.isEmpty() ?
-                        this.namespace: clusterAccess.getNamespace();
-                log.info("Using docker image name of namespace: " + namespaceToBeUsed);
-                properties.setProperty(DOCKER_IMAGE_USER, namespaceToBeUsed);
-            }
-            if (!properties.contains(RuntimeMode.JKUBE_EFFECTIVE_PLATFORM_MODE)) {
-                properties.setProperty(RuntimeMode.JKUBE_EFFECTIVE_PLATFORM_MODE, runtimeMode.toString());
-            }
-        }
-    }
-
     private KubernetesList generateResources() throws IOException {
         log.verbose("Generating resources");
         JKubeEnricherContext.JKubeEnricherContextBuilder ctxBuilder = JKubeEnricherContext.builder()
@@ -257,8 +223,7 @@ public class ResourceMojo extends AbstractJKubeMojo {
 
     // ==================================================================================
 
-    private List<ImageConfiguration> getResolvedImages(List<ImageConfiguration> images, final KitLogger log)
-        throws IOException {
+    private List<ImageConfiguration> getResolvedImages(List<ImageConfiguration> images, final KitLogger log) {
         GeneratorManager generatorManager = new DefaultGeneratorManager(GeneratorContext.builder()
             .config(ProfileUtil.blendProfileWithConfiguration(ProfileUtil.GENERATOR_CONFIG, profile, ResourceUtil.getFinalResourceDirs(resourceDir, environment), generator))
             .project(javaProject)
@@ -267,15 +232,10 @@ public class ResourceMojo extends AbstractJKubeMojo {
             .useProjectClasspath(useProjectClasspath)
             .strategy(JKubeBuildStrategy.docker)
             .prePackagePhase(true)
+            .openshiftNamespace(StringUtils.isNotBlank(this.namespace) ? this.namespace: clusterConfiguration.getNamespace())
+            .buildTimestamp(getBuildTimestamp(getPluginContext(), CONTEXT_KEY_BUILD_TIMESTAMP, project.getBuild().getDirectory(), DOCKER_BUILD_TIMESTAMP))
             .build());
-      return ConfigHelper.initImageConfiguration(
-          getBuildTimestamp(getPluginContext(), CONTEXT_KEY_BUILD_TIMESTAMP, project.getBuild().getDirectory(),
-              DOCKER_BUILD_TIMESTAMP),
-          images, imageConfigResolver,
-          log,
-          null, // no filter on image name yet (TODO: Maybe add this, too ?)
-          generatorManager,
-          jkubeServiceHub.getConfiguration());
+        return generatorManager.generateAndMerge(images);
     }
 
     private boolean hasJKubeDir() {

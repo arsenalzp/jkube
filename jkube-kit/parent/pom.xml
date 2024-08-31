@@ -20,7 +20,7 @@
   <parent>
     <groupId>org.eclipse.jkube</groupId>
     <artifactId>jkube</artifactId>
-    <version>1.17-SNAPSHOT</version>
+    <version>1.18-SNAPSHOT</version>
     <relativePath>../../pom.xml</relativePath>
   </parent>
 
@@ -34,36 +34,35 @@
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
-    <version.bouncycastle.bcpkix>1.76</version.bouncycastle.bcpkix>
-    <version.commons-codec>1.15</version.commons-codec>
-    <version.commons-lang3>3.13.0</version.commons-lang3>
-    <version.commons-text>1.10.0</version.commons-text>
+    <version.bouncycastle.bcpkix>1.78.1</version.bouncycastle.bcpkix>
+    <version.commons-codec>1.17.0</version.commons-codec>
+    <version.commons-lang3>3.14.0</version.commons-lang3>
+    <version.commons-text>1.12.0</version.commons-text>
     <version.gson>2.10.1</version.gson>
     <version.httpcore>4.4.16</version.httpcore>
     <version.httpclient>4.5.14</version.httpclient>
     <version.ianaservicehelper>0.0.1</version.ianaservicehelper>
-    <version.jansi>2.4.0</version.jansi>
-    <version.javassist>3.29.2-GA</version.javassist>
+    <version.jansi>2.4.1</version.jansi>
+    <version.javassist>3.30.2-GA</version.javassist>
     <!-- Don't upgrade Eclipse JGit to 6.x for Java 8 compatibility -->
-    <version.jgit>5.12.0.202106070339-r</version.jgit>
-    <version.jnr-unixsocket>0.38.20</version.jnr-unixsocket>
+    <version.jgit>5.13.3.202401111512-r</version.jgit>
+    <version.jnr-unixsocket>0.38.22</version.jnr-unixsocket>
     <version.jsr305>3.0.2</version.jsr305>
-    <version.maven-archiver>3.6.1</version.maven-archiver>
+    <version.maven-archiver>3.6.2</version.maven-archiver>
     <version.maven-core>3.8.1</version.maven-core>
-    <version.maven-filtering>3.3.1</version.maven-filtering>
-    <version.maven-plugin-annotations>3.9.0</version.maven-plugin-annotations>
-    <version.networknt.validator>1.0.86</version.networknt.validator>
+    <version.maven-filtering>3.3.2</version.maven-filtering>
+    <version.maven-plugin-annotations>3.13.0</version.maven-plugin-annotations>
+    <version.networknt.validator>1.4.0</version.networknt.validator>
     <version.openshift-client>${version.kubernetes-client}</version.openshift-client>
-    <version.plexus-classworlds>2.7.0</version.plexus-classworlds>
+    <version.plexus-classworlds>2.8.0</version.plexus-classworlds>
     <version.plexus-build-api>0.0.7</version.plexus-build-api>
     <version.plexus-utils>3.5.0</version.plexus-utils>
     <version.shrinkwrap>1.2.6</version.shrinkwrap>
     <version.validation-api>2.0.1.Final</version.validation-api>
-    <version.wagon-ssh-external>2.3</version.wagon-ssh-external>
-    <version.ow2.asm>9.5</version.ow2.asm>
+    <version.ow2.asm>9.7</version.ow2.asm>
 
     <!-- =======================================================  -->
-    <version.image.jkube-images>0.0.23</version.image.jkube-images>
+    <version.image.jkube-images>0.0.24</version.image.jkube-images>
     <version.image.ubi-minimal>9.3</version.image.ubi-minimal>
     <!-- === Java base image versions for docker, s2i (istag == s2i) -->
     <!-- Upstream -->
@@ -108,6 +107,11 @@
     <image.springboot-native.upstream.docker>registry.access.redhat.com/ubi9/ubi-minimal:${version.image.ubi-minimal}</image.springboot-native.upstream.docker>
     <image.springboot-native.upstream.istag>registry.access.redhat.com/ubi9/ubi-minimal:${version.image.ubi-minimal}</image.springboot-native.upstream.istag>
 
+    <!-- Micronaut -->
+    <image.micronaut-native.upstream.s2i>registry.access.redhat.com/ubi9/ubi-minimal:${version.image.ubi-minimal}</image.micronaut-native.upstream.s2i>
+    <image.micronaut-native.upstream.docker>registry.access.redhat.com/ubi9/ubi-minimal:${version.image.ubi-minimal}</image.micronaut-native.upstream.docker>
+    <image.micronaut-native.upstream.istag>registry.access.redhat.com/ubi9/ubi-minimal:${version.image.ubi-minimal}</image.micronaut-native.upstream.istag>
+
     <!-- Quarkus -->
     <image.quarkus-native.upstream.s2i>quay.io/quarkus/ubi-quarkus-native-binary-s2i:1.0</image.quarkus-native.upstream.s2i>
     <image.quarkus-native.upstream.docker>registry.access.redhat.com/ubi9/ubi-minimal:${version.image.ubi-minimal}</image.quarkus-native.upstream.docker>
@@ -125,9 +129,9 @@
     <image.wildfly.upstream.s2i>quay.io/wildfly/wildfly-centos7:${version.image.wildfly.upstream.s2i}</image.wildfly.upstream.s2i>
     <image.wildfly.upstream.istag>wildfly:${version.image.wildfly.upstream.s2i}</image.wildfly.upstream.istag>
 
-    <jib-core.version>0.24.0</jib-core.version>
+    <jib-core.version>0.27.0</jib-core.version>
 
-    <pack.version>0.32.1</pack.version>
+    <pack.version>0.34.2</pack.version>
     <pack.windows.binary-extension>exe</pack.windows.binary-extension>
     <pack.linux.artifact>https://github.com/buildpacks/pack/releases/download/v${pack.version}/pack-v${pack.version}-linux.tgz</pack.linux.artifact>
     <pack.linux-arm64.artifact>https://github.com/buildpacks/pack/releases/download/v${pack.version}/pack-v${pack.version}-linux-arm64.tgz</pack.linux-arm64.artifact>
@@ -247,6 +251,12 @@
       <dependency>
         <groupId>org.eclipse.jkube</groupId>
         <artifactId>jkube-kit-generator-java-exec</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>org.eclipse.jkube</groupId>
+        <artifactId>jkube-kit-generator-dockerfile-simple</artifactId>
         <version>${project.version}</version>
       </dependency>
 
@@ -919,14 +929,6 @@
         <artifactId>maven-failsafe-plugin</artifactId>
       </plugin>
     </plugins>
-
-    <extensions>
-      <extension>
-        <groupId>org.apache.maven.wagon</groupId>
-        <artifactId>wagon-ssh-external</artifactId>
-        <version>${version.wagon-ssh-external}</version>
-      </extension>
-    </extensions>
   </build>
 
 </project>

@@ -22,16 +22,13 @@ import io.fabric8.kubernetes.client.dsl.base.CustomResourceDefinitionContext;
 import io.fabric8.kubernetes.client.server.mock.EnableKubernetesMockClient;
 import io.fabric8.kubernetes.client.server.mock.KubernetesMockServer;
 import io.fabric8.kubernetes.client.Watcher;
-import org.eclipse.jkube.kit.config.access.ClusterAccess;
+import org.eclipse.jkube.kit.common.access.ClusterConfiguration;
 import org.eclipse.jkube.kit.config.resource.ResourceConfig;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.eclipse.jkube.kit.config.service.kubernetes.KubernetesClientUtil.doDeleteAndWait;
-import static org.eclipse.jkube.kit.config.service.kubernetes.KubernetesClientUtil.getPodStatusMessagePostfix;
-import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+
 @SuppressWarnings("unused")
 @EnableKubernetesMockClient(crud = true)
 class KubernetesClientUtilTest {
@@ -92,16 +89,13 @@ class KubernetesClientUtilTest {
   }
 
   @Test
-  void applicableNamespace_whenNamespaceProvidedViaClusterAccess_shouldReturnProvidedNamespace() {
-    // Given
-    ClusterAccess mockedClusterAccess = mock(ClusterAccess.class, RETURNS_DEEP_STUBS);
-    when(mockedClusterAccess.getNamespace()).thenReturn("ns1");
-
+  void applicableNamespace_whenNamespaceProvidedViaKubernetesClient_shouldReturnProvidedNamespace() {
     // When
-    String resolvedNamespace = KubernetesClientUtil.applicableNamespace(null, null, null, mockedClusterAccess);
+    String resolvedNamespace = KubernetesClientUtil.applicableNamespace(null, null, null,
+      ClusterConfiguration.from(kubernetesClient.getConfiguration()).build());
 
     // Then
-    assertThat(resolvedNamespace).isEqualTo("ns1");
+    assertThat(resolvedNamespace).isEqualTo(kubernetesClient.getNamespace());
   }
 
   @Test
@@ -129,17 +123,15 @@ class KubernetesClientUtilTest {
   }
 
   @Test
-  void resolveFallbackNamespace_whenNamespaceProvidedViaClusterAccess_shouldReturnProvidedNamespace() {
-    // Given
-    ClusterAccess mockedClusterAccess = mock(ClusterAccess.class, RETURNS_DEEP_STUBS);
-    when(mockedClusterAccess.getNamespace()).thenReturn("ns1");
-
+  void resolveFallbackNamespace_whenNamespaceProvidedViaKubernetesClient_shouldReturnProvidedNamespace() {
     // When
-    String resolvedNamespace = KubernetesClientUtil.resolveFallbackNamespace(null, mockedClusterAccess);
+    String resolvedNamespace = KubernetesClientUtil
+      .resolveFallbackNamespace(null, ClusterConfiguration.from(kubernetesClient.getConfiguration()).build());
 
     // Then
-    assertThat(resolvedNamespace).isEqualTo("ns1");
+    assertThat(resolvedNamespace).isEqualTo(kubernetesClient.getNamespace());
   }
+
   @Test
   void getPodStatusMessagePostfix_whenActionIsDeleted_shouldReturnPodDeletedMessage() {
     // Given
@@ -162,6 +154,63 @@ class KubernetesClientUtilTest {
 
     // Then
     assertThat(messagePostfix).isEqualTo(": Error");
+  }
+
+  @Test
+  void getPodCondition_whenPodConditionIsReadyAndTrue_shouldReturnReady() {
+    // Given
+    Pod pod = new PodBuilder()
+      .withNewStatus()
+      .addNewCondition()
+      .withType("ready")
+      .withStatus("True")
+      .endCondition()
+      .endStatus()
+      .build();
+
+    // When
+    String condition = KubernetesClientUtil.getPodCondition(pod);
+
+    // Then
+    assertThat(condition).isEqualTo("ready");
+  }
+
+  @Test
+  void getPodCondition_whenPodConditionIsReadyAndFalse_shouldReturnEmptyString() {
+    // Given
+    Pod pod = new PodBuilder()
+      .withNewStatus()
+      .addNewCondition()
+      .withType("ready")
+      .withStatus("False")
+      .endCondition()
+      .endStatus()
+      .build();
+
+    // When
+    String condition = KubernetesClientUtil.getPodCondition(pod);
+
+    // Then
+    assertThat(condition).isEmpty();
+  }
+
+  @Test
+  void getPodCondition_whenPodConditionIsNotReady_shouldReturnEmptyString() {
+    // Given
+    Pod pod = new PodBuilder()
+      .withNewStatus()
+      .addNewCondition()
+      .withType("notready")
+      .withStatus("True")
+      .endCondition()
+      .endStatus()
+      .build();
+
+    // When
+    String condition = KubernetesClientUtil.getPodCondition(pod);
+
+    // Then
+    assertThat(condition).isEmpty();
   }
 
 }
